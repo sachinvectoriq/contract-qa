@@ -850,7 +850,8 @@ def main():
                                     invoice['match_results'] = match_results
                                     
                                     # Display results
-                                    st.success(f"Found {len(match_results.get('matches', []))} matches!")
+                                    st.success(f"Found {len(match_results)} matches!")
+
                                     
                                     if match_results.get('matches'):
                                         matches_df = pd.DataFrame(match_results['matches'])
