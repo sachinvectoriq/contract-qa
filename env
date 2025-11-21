@@ -1,0 +1,6 @@
+api_key = "2f6e41aa534f49908feb01c6de771d6b"
+endpoint = "https://ea-oai-sandbox.openai.azure.com/"
+deployment = "dev-gpt-4o"
+
+doc_intell_endpoint = "https://di-contractinv-qa-001.cognitiveservices.azure.com/"
+doc_intell_key = "BvufO0Ysl0MvvxSfZRGJ2YTP8RLRN1jNDqzQQTQ59YSfuTIfKBDsJQQJ99BJAC1i4TkXJ3w3AAALACOGV4Fb"
