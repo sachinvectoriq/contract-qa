@@ -22,12 +22,55 @@ import os
 
 load_dotenv()
 
-# ==================== DATA MODELS ====================
+from dataclasses import dataclass
+from typing import List, Optional
+from datetime import date
+
+@dataclass
+class RateTier:
+    from_qty: float
+    to_qty: Optional[float]
+    price: float
+
 @dataclass
 class RateCard:
-    sl_no: str
-    item: str
-    price_per_unit: float
+    category: str
+    unit: str
+    currency: str
+    region: Optional[str]
+    included_qty: Optional[float]
+    tiers: List[RateTier]
+    effective_from: date
+    effective_to: Optional[date]
+
+@dataclass
+class InvoiceLine:
+    line_ref: str
+    description: str
+    quantity: float
+    unit_price: float
+    amount: float
+    category: Optional[str] = None
+    confidence: float = 1.0
+
+@dataclass
+class Invoice:
+    vendor: str
+    invoice_number: str
+    invoice_date: date
+    total_amount: float
+    lines: List[InvoiceLine]
+
+@dataclass
+class Discrepancy:
+    invoice_number: str
+    line_ref: str
+    category: str
+    expected_amount: float
+    actual_amount: float
+    delta: float
+    tolerance_applied: str
+    reason: str
 
 
 # ==================== AZURE CLIENT ====================
@@ -390,6 +433,89 @@ def extract_invoice_dynamic(invoice_text: str, client, deployment) -> tuple:
         st.error(f"Failed to parse invoice extraction: {e}")
         st.code(out, language='text')
         return {}, [], []
+from typing import List, Optional, Tuple
+import re
+
+# Assume ChargeCategory, ReasonCode, RateCard, InvoiceLine, Invoice, Discrepancy, RateTier, etc. are already defined as in your code.
+
+def classify_invoice_line(description: str) -> Tuple[str, float]:
+    """Classify invoice line using keywords (simplified, no OpenAI call)"""
+    patterns = {
+        "RECURRING": [r'monthly', r'subscription', r'recurring', r'service fee'],
+        "USAGE": [r'usage', r'data', r'bandwidth'],
+        "ONE_TIME": [r'setup', r'installation', r'onboarding'],
+        "DISCOUNT": [r'discount', r'credit'],
+        "SURCHARGE_FEE": [r'surcharge', r'fee'],
+        "TAX": [r'tax', r'vat', r'gst']
+    }
+    desc = description.lower()
+    for cat, keys in patterns.items():
+        for kw in keys:
+            if re.search(kw, desc):
+                return cat, 0.9
+    return "ONE_TIME", 0.5  # default fallback
+
+def calculate_expected_amount(quantity: float, rate_card: RateCard) -> float:
+    """Calculate expected amount based on rate card tiers"""
+    if not rate_card.tiers:
+        return 0
+    total = 0
+    remaining = quantity
+    if rate_card.included_qty:
+        remaining = max(0, quantity - rate_card.included_qty)
+    for tier in rate_card.tiers:
+        if remaining <= 0:
+            break
+        tier_qty = remaining
+        if tier.to_qty is not None:
+            tier_qty = min(remaining, tier.to_qty - tier.from_qty)
+        total += tier_qty * tier.price
+        remaining -= tier_qty
+    return total
+
+def match_invoice_to_contract(invoice: Invoice, rate_cards: List[RateCard]) -> List[Discrepancy]:
+    """Match and reconcile invoice lines to rate cards; return discrepancies."""
+    discrepancies = []
+    # Classify invoice lines
+    for line in invoice.lines:
+        line.category, line.confidence = classify_invoice_line(line.description)
+    # Match lines to rate card entries, compute expected amounts, and log discrepancies
+    for line in invoice.lines:
+        match = None
+        for rc in rate_cards:
+            if rc.category == line.category and rc.effective_from <= invoice.invoice_date and (
+                rc.effective_to is None or invoice.invoice_date <= rc.effective_to):
+                match = rc
+                break
+        if not match:
+            # No contract rate found
+            discrepancies.append(Discrepancy(
+                invoice_number=invoice.invoice_number,
+                line_ref=line.line_ref,
+                category=line.category,
+                expected_amount=0,
+                actual_amount=line.amount,
+                delta=line.amount,
+                tolerance_applied="N/A",
+                reason="UNCONTRACTED_FEE"
+            ))
+            continue
+        expected = calculate_expected_amount(line.quantity, match)
+        tolerance = max(0.50, line.amount * 0.005)  # $0.50 or 0.5%
+        delta = abs(expected - line.amount)
+        if delta > tolerance:
+            reason = "RATE_MISMATCH" if delta > 1 else "ROUNDING"
+            discrepancies.append(Discrepancy(
+                invoice_number=invoice.invoice_number,
+                line_ref=line.line_ref,
+                category=line.category,
+                expected_amount=expected,
+                actual_amount=line.amount,
+                delta=line.amount - expected,
+                tolerance_applied=f"${tolerance:.2f}",
+                reason=reason
+            ))
+    return discrepancies
 
 
 # ==================== STREAMLIT UI ====================
