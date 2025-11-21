@@ -474,6 +474,7 @@ def calculate_expected_amount(quantity: float, rate_card: RateCard) -> float:
     return total
 
 
+
 def match_invoice_to_contract(
     invoice_line_items: list,
     invoice_line_item_columns: list,
@@ -481,41 +482,46 @@ def match_invoice_to_contract(
     client,
     deployment
 ) -> list:
-    
+    """
+    Matches invoice lines (list of dicts) to contracts (list of dicts with rate cards).
+    Returns list of discrepancies as dicts.
+    """
+
     discrepancies = []
 
-    # Build a simple structure for rate cards from contracts
+    # Flatten rate cards from all contracts
     rate_cards = []
     for contract in contracts:
-        rate_cards.extend(contract.get('rate_cards', []))  # Assuming 'rate_cards' list of dicts
+        rate_cards.extend(contract.get('rate_cards', []))  # flat list of rate cards dicts
 
-    # Iterate invoice lines
+    # Iterate over each line item in invoice
     for line in invoice_line_items:
-        description = line.get('Description', '')
-        quantity = float(line.get('Quantity', 0))
-        amount = float(line.get('Amount', 0))
-        line_ref = line.get('Line', '')
+        description = line.get('Description', '') or line.get('Item', '') or ''
+        quantity = 0.0
+        amount = 0.0
+        try:
+            quantity = float(line.get('Quantity', 0) or 0)
+            amount = float(line.get('Amount', 0) or 0)
+        except Exception:
+            pass
+        line_ref = line.get('Line', '') or line.get('Item', '')
 
-        # Basic category classification (pattern matching or default)
-        # You can implement or call your basic classifier function here, simplified
-        category = 'ONE_TIME'  # Default category placeholder
+        # Simple category assignment (default ONE_TIME)
+        category = 'ONE_TIME'  # You can replace with your classification logic if needed
 
-        # Find matching rate card for category and effective date
-        # Here you can implement simplified checks if you have invoice date info else skip
-
+        # Find matching rate card for this category
         matching_rate = None
         for rate in rate_cards:
             if rate.get('category') == category:
-                # Skipping effective date check for simplification
+                # Skipping date range check for simplicity (add if you have invoice date)
                 matching_rate = rate
                 break
 
-        # Calculate expected amount (simplified)
-        expected_amount = 0
+        # Calculate expected amount based on tiers
+        expected_amount = 0.0
         if matching_rate and 'tiers' in matching_rate:
-            tiers = matching_rate['tiers']
             remaining_qty = max(0, quantity - (matching_rate.get('included_qty') or 0))
-            for tier in tiers:
+            for tier in matching_rate['tiers']:
                 if remaining_qty <= 0:
                     break
                 from_qty = tier.get('from_qty', 0)
@@ -527,9 +533,8 @@ def match_invoice_to_contract(
                 expected_amount += tier_qty * price
                 remaining_qty -= tier_qty
 
-        # Compare and append discrepancies if delta exceeds tolerance
         delta = abs(expected_amount - amount)
-        tolerance = max(0.50, amount * 0.005)  # $0.50 or 0.5%
+        tolerance = max(0.50, amount * 0.005)
 
         if delta > tolerance:
             reason = "RATE_MISMATCH" if delta >= 1 else "ROUNDING"
@@ -539,11 +544,13 @@ def match_invoice_to_contract(
                 'expected_amount': expected_amount,
                 'actual_amount': amount,
                 'delta': amount - expected_amount,
-                'tolerance': f"${tolerance:.2f}",
+                'tolerance_applied': f"${tolerance:.2f}",
                 'reason': reason
             })
 
     return discrepancies
+
+   
 
         
 
@@ -853,13 +860,12 @@ def main():
                                     st.success(f"Found {len(match_results)} matches!")
 
                                     
-                                    if match_results.get('matches'):
-                                        matches_df = pd.DataFrame(match_results['matches'])
-                                        st.dataframe(matches_df, use_container_width=True, hide_index=True)
-                                    
-                                    if match_results.get('unmatched'):
-                                        st.warning(f"⚠️ {len(match_results['unmatched'])} unmatched items")
-                    
+                                    if match_results:
+                                                    discrepancies_df = pd.DataFrame(match_results)
+                                                    st.dataframe(discrepancies_df)
+                                    else:
+                                        st.info("No discrepancies found.")
+                            
                     # Show raw text preview
                     with st.expander("📄 Raw Text Preview"):
                         st.code(invoice.get('raw_text', ''), language='text')
