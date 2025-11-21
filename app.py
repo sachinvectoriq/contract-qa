@@ -875,8 +875,7 @@ def main():
                             label="📥 Download Line Items CSV",
                             data=csv,
                             file_name=f"invoice_items_{invoice['id']}.csv",
-                            mime="text/csv",
-                            key=f"download_invoice_{idx}"
+                            mime="text/csv"
                         )
                     else:
                         st.info("No line items extracted from this invoice")
@@ -1091,3 +1090,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
