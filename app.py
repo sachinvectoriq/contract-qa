@@ -1,3 +1,4 @@
+
 """
 Contract Management System - Simplified with Standard Rate Card Template
 Only Contract tab is functional, other tabs under development
@@ -34,9 +35,9 @@ class RateCard:
 def get_azure_client():
     """Get configured Azure OpenAI client"""
     try:
-        api_key = "2f6e41aa534f49908feb01c6de771d6b"
-        endpoint = "https://ea-oai-sandbox.openai.azure.com/"
-        deployment = "dev-gpt-4o"
+        api_key = st.secrets["AZURE_OPENAI_API_KEY"]
+        endpoint = st.secrets["AZURE_OPENAI_ENDPOINT"]
+        deployment = st.secrets["AZURE_OPENAI_DEPLOYMENT"]
         
         if not api_key or not endpoint:
             st.error("⚠️ Azure OpenAI credentials not configured.")
@@ -164,9 +165,8 @@ def extract_text_ocr_azure(pdf_input, doc_intell_endpoint=None, doc_intell_key=N
     """
     
     # Azure Document Intelligence endpoint & key
-    endpoint ="https://di-contractinv-qa-001.cognitiveservices.azure.com"
-    key = "BvufO0Ysl0MvvxSfZRGJ2YTP8RLRN1jNDqzQQTQ59YSfuTIfKBDsJQQJ99BJAC1i4TkXJ3w3AAALACOGV4Fb"
-    
+    endpoint =st.secrets["AZURE_DI_ENDPOINT"]
+    key = st.secrets["AZURE_DI_KEY"]
     if not endpoint or not key:
         raise ValueError("Azure Document Intelligence credentials not found")
     
