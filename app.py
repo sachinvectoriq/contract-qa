@@ -26,6 +26,37 @@ from dataclasses import dataclass
 from typing import List, Optional
 from datetime import date
 
+correct_password = st.secrets["password"]
+def check_password():
+    # Initialize state once
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+
+    # -------- If already authenticated, exit immediately --------
+    if st.session_state.authenticated:
+        return True
+
+    # -------- Show password box only when NOT authenticated --------
+    with st.form("login_form"):
+        st.write("Hello! Please enter the password to continue.")
+        password = st.text_input("Enter password", type="password")
+        submitted = st.form_submit_button("Login")
+
+    if submitted:
+        if password == correct_password:   # change to your password
+            st.session_state.authenticated = True
+            st.rerun()    # <--- force page refresh so form disappears
+        else:
+            st.error("❌ Incorrect password")
+
+    return False
+
+
+# Stop running app unless logged in
+if not check_password():
+    st.stop()
+
+
 @dataclass
 class RateTier:
     from_qty: float
@@ -618,6 +649,10 @@ def main():
     if 'contracts' not in st.session_state:
         st.session_state.contracts = []
 
+    # Initialize invoice session state
+    if 'invoices' not in st.session_state:
+        st.session_state.invoices = []
+
     # Main tabs
     tab_contracts, tab_invoices, tab_reconcile, tab_export = st.tabs(
         ["📄 Contracts", "📑 Invoices ", "🔍 Reconcile (Under Dev)", "📊 Export (Under Dev)"]
@@ -743,21 +778,19 @@ def main():
             st.info("👆 Upload a contract PDF to get started")
 
     # ==================== INVOICES TAB (Under Development) ====================
+    # ==================== INVOICES TAB ====================
     with tab_invoices:
         st.header("📑 Invoice Processing")
-
-        # Initialize invoice session state
-        if 'invoices' not in st.session_state:
-            st.session_state.invoices = []
 
         col1, col2 = st.columns([2, 1])
 
         with col1:
-            uploaded_invoice = st.file_uploader(
-                "Upload Invoice PDF",
+            uploaded_invoices = st.file_uploader(
+                "Upload Invoice PDFs",
                 type=['pdf'],
+                accept_multiple_files=True,
                 key="invoice_upload",
-                help="Upload an invoice PDF to automatically extract header information and line items"
+                help="Upload one or more invoice PDFs to automatically extract header information and line items"
             )
 
             use_ocr_invoice = st.checkbox(
@@ -766,53 +799,43 @@ def main():
                 key="invoice_ocr"
             )
 
-            if uploaded_invoice:
-                if st.button("📊 Extract Invoice Data", type="primary", key="extract_invoice"):
+            if uploaded_invoices:
+                if st.button("📊 Extract Invoice Data for All", type="primary", key="extract_invoice_multi"):
                     client, deployment = get_azure_client()
                     if not client:
                         st.error("Cannot process without Azure OpenAI configuration")
                         st.stop()
 
-                    with st.spinner("Extracting invoice data..."):
-                        # Extract text
-                        if use_ocr_invoice:
-                            invoice_text = extract_text_ocr_azure(uploaded_invoice)
-                        else:
-                            invoice_text = extract_pdf_text(uploaded_invoice)
+                    with st.spinner("Extracting data from uploaded invoices..."):
+                        for uploaded_invoice in uploaded_invoices:
+                            try:
+                                if use_ocr_invoice:
+                                    invoice_text = extract_text_ocr_azure(uploaded_invoice)
+                                else:
+                                    invoice_text = extract_pdf_text(uploaded_invoice)
 
-                        if not invoice_text:
-                            st.error("Failed to extract text from invoice")
-                            st.stop()
+                                if not invoice_text:
+                                    st.warning(f"Failed to extract text from {uploaded_invoice.name}")
+                                    continue
 
-                        # Extract invoice data dynamically
-                        metadata, line_items, columns = extract_invoice_dynamic(invoice_text, client, deployment)
+                                metadata, line_items, columns = extract_invoice_dynamic(invoice_text, client, deployment)
 
-                        if line_items and columns:
-                            # Store in session state
-                            invoice_data = {
-                                'id': hashlib.md5(invoice_text.encode()).hexdigest()[:8],
-                                'filename': uploaded_invoice.name,
-                                'upload_date': datetime.now(),
-                                'metadata': metadata,
-                                'line_items': line_items,
-                                'line_item_columns': columns,
-                                'raw_text': invoice_text[:1000]
-                            }
-                            st.session_state.invoices.append(invoice_data)
-
-                            st.success(f"✅ Extracted invoice with {len(line_items)} line items and {len(columns)} columns!")
-
-                            # Display key metadata
-                            if metadata:
-                                st.info(
-                                    f"**Invoice #:** {metadata.get('invoice_number', 'N/A')} | "
-                                    f"**Date:** {metadata.get('invoice_date', 'N/A')} | "
-                                    f"**Vendor:** {metadata.get('vendor_name', 'N/A')} | "
-                                    f"**Total:** {metadata.get('currency', '')} {metadata.get('total_amount', 'N/A')}"
-                                )
-                            st.info(f"**Line Item Columns:** {', '.join(columns)}")
-                        else:
-                            st.error("❌ No invoice data found in the document")
+                                if line_items and columns:
+                                    invoice_data = {
+                                        'id': hashlib.md5(invoice_text.encode()).hexdigest()[:8],
+                                        'filename': uploaded_invoice.name,
+                                        'upload_date': datetime.now(),
+                                        'metadata': metadata,
+                                        'line_items': line_items,
+                                        'line_item_columns': columns,
+                                        'raw_text': invoice_text[:1000]
+                                    }
+                                    st.session_state.invoices.append(invoice_data)
+                                    st.success(f"✅ Extracted {len(line_items)} line items from {uploaded_invoice.name}!")
+                                else:
+                                    st.warning(f"No invoice data found in {uploaded_invoice.name}")
+                            except Exception as e:
+                                st.error(f"Failed to process {uploaded_invoice.name}: {str(e)}")
 
         with col2:
             if st.session_state.invoices:
@@ -832,7 +855,7 @@ def main():
 
                 st.metric("Total Invoice Amount", f"${total_amount:,.2f}")
 
-        # Display invoices
+        # Display extracted invoices
         if st.session_state.invoices:
             st.markdown("---")
             st.subheader("📋 Extracted Invoices")
@@ -842,14 +865,12 @@ def main():
                     f"Invoice {idx+1}: {invoice['filename']}",
                     expanded=(idx == len(st.session_state.invoices) - 1)
                 ):
-                    # Display metadata
                     st.write(f"**Invoice ID:** {invoice['id']}")
                     st.write(f"**Upload Date:** {invoice['upload_date'].strftime('%Y-%m-%d %H:%M:%S')}")
 
-                    if invoice.get('metadata'):
+                    meta = invoice.get('metadata', {})
+                    if meta:
                         st.markdown("##### 📄 Invoice Details")
-                        meta = invoice['metadata']
-
                         col_a, col_b, col_c = st.columns(3)
                         with col_a:
                             st.write(f"**Invoice Number:** {meta.get('invoice_number', 'N/A')}")
@@ -862,17 +883,12 @@ def main():
                             st.write(f"**Tax:** {meta.get('currency', '')} {meta.get('tax_amount', 'N/A')}")
                             st.write(f"**Total:** {meta.get('currency', '')} {meta.get('total_amount', 'N/A')}")
 
-                    # Display line items
                     if invoice.get('line_items') and invoice.get('line_item_columns'):
                         st.markdown("##### 📊 Line Items")
                         line_items_df = pd.DataFrame(invoice['line_items'])
-
-                        # Reorder columns
                         line_items_df = line_items_df[invoice['line_item_columns']]
-
                         st.dataframe(line_items_df, use_container_width=True, hide_index=True)
 
-                        # Download button
                         csv = line_items_df.to_csv(index=False).encode('utf-8')
                         st.download_button(
                             label="📥 Download Line Items CSV",
@@ -883,6 +899,7 @@ def main():
                         )
                     else:
                         st.info("No line items extracted from this invoice")
+                    
 
                     # Quick match button
                     if st.session_state.contracts:
@@ -917,156 +934,153 @@ def main():
         else:
             st.info("👆 Upload an invoice PDF to get started")
 
-    # ==================== RECONCILE TAB (Under Development) ====================
+    # ==================== RECONCILE TAB (Under Development) ==================== 
     with tab_reconcile:
         st.header("🔍 Reconciliation Analysis")
         client, deployment = get_azure_client()
+        search_text = st.text_input("Enter full or partial invoice filename to filter results")
 
         # Show button first
-        if st.button("🔄 Reconcile Invoice with Contract", type="primary", use_container_width=True):
+        if st.button("🔄 Reconcile All Invoices with Contracts", type="primary", use_container_width=True):
 
-            # Fetch data from state AFTER button click
             has_invoice = 'invoices' in st.session_state and st.session_state.invoices
             has_contract = 'contracts' in st.session_state and st.session_state.contracts
 
-            # Handle errors after button click
             if not has_invoice or not has_contract:
                 st.error("❌ Cannot perform reconciliation")
                 if not has_invoice:
-                    st.warning("📄 Invoice data is missing. Please upload and process an invoice first.")
+                    st.warning("📄 Invoice data is missing. Please upload and process invoices first.")
                 if not has_contract:
-                    st.warning("📑 Contract data is missing. Please upload and process a contract first.")
+                    st.warning("📑 Contract data is missing. Please upload and process contracts first.")
             else:
-                # Data available → reconcile
-                recon_contract = st.session_state.contracts
-                recon_invoice = st.session_state.invoices
+                if search_text:
+                    filtered_invoices = [
+                        inv for inv in st.session_state.invoices
+                        if search_text.lower() in inv['filename'].lower()
+                    ]
+                    if not filtered_invoices:
+                        st.info(f"No invoices found matching: {search_text}")
+                else:
+                    filtered_invoices = st.session_state.invoices
 
-                system = """
-                You are a smart assistant that helps to reconcile invoice data with contract data.
-                For each item in the invoice, compare it with the contract entries and output the following fields:
-                - item (description or identifier)
-                - quantity from invoice
-                - invoice unit price
-                - contract unit price (expected price)
-                - invoice total amount (quantity multiplied by invoice unit price)
-                - expected total amount (quantity multiplied by contract unit price)
-                - extra_paid (invoice total amount minus expected total amount)
-                - difference: "Yes" if extra_paid is not zero (consider a tolerance of +-0.01), else "No"
+                for invoice in st.session_state.invoices:
+                    recon_contract = st.session_state.contracts
+                    recon_invoice = [invoice]
 
-                "summary": {
-                    "total_quantity": sum of all quantity_invoice,
-                    "total_invoice_amount": sum of all total_invoice_amount
-                    "total_expected_amount": sum of all total_expected_amount,
-                    "total_extra_paid": sum of all extra_paid
+                    system = """
+                    You are a smart assistant that helps to reconcile invoice data with contract data.
+                    For each item in the invoice, compare it with the contract entries and output the following fields:
+                    - item (description or identifier)
+                    - quantity from invoice
+                    - invoice unit price
+                    - contract unit price (expected price)
+                    - invoice total amount (quantity multiplied by invoice unit price)
+                    - expected total amount (quantity multiplied by contract unit price)
+                    - extra_paid (invoice total amount minus expected total amount)
+                    - difference: "Yes" if extra_paid is not zero (consider a tolerance of +-0.01), else "No"
+
+                    "summary": {
+                        "total_quantity": sum of all quantity_invoice,
+                        "total_invoice_amount": sum of all total_invoice_amount,
+                        "total_expected_amount": sum of all total_expected_amount,
+                        "total_extra_paid": sum of all extra_paid
                     }
-                    
-                Output format as a JSON object with:
-                "lines": [...],
-                "summary": {...}
-                """
 
-                user = f"""
-                ***Here is the invoice data:
-                {recon_invoice}
+                    Output format as a JSON object with:
+                    "lines": [...],
+                    "summary": {...}
+                    """
 
-                ***Here is the contract data:
-                {recon_contract}
-                """
+                    user = f"""
+                    ***Here is the invoice data:
+                    {recon_invoice}
 
-                try:
-                    with st.spinner("🔄 Reconciling invoice with contract..."):
-                        out = azure_chat_json(client, deployment, system, user, max_tokens=3000)
+                    ***Here is the contract data:
+                    {recon_contract}
+                    """
 
-                    if out:
-                        if isinstance(out, str):
-                            import re
-                            json_match = re.search(r'\{.*\}', out, re.DOTALL)
-                            if json_match:
-                                json_str = json_match.group(0)
-                                out = json.loads(json_str)
-                            else:
-                                st.error("❌ Could not extract JSON from LLM response")
-                                out = None
+                    try:
+                        with st.spinner(f"🔄 Reconciling invoice {invoice['filename']}..."):
+                            out = azure_chat_json(client, deployment, system, user, max_tokens=3000)
 
                         if out:
-                            st.session_state.reconciliation_result = out
-                            st.success("✅ Reconciliation completed successfully!")
+                            if isinstance(out, str):
+                                import re
+                                json_match = re.search(r'\{.*\}', out, re.DOTALL)
+                                if json_match:
+                                    json_str = json_match.group(0)
+                                    out = json.loads(json_str)
+                                else:
+                                    st.error(f"❌ Could not extract JSON from LLM response for invoice {invoice['filename']}")
+                                    continue
+
+                            st.subheader(f"Reconciliation Results for {invoice['filename']}")
+                            clean_result = preprocess_reconciliation_result(out)
+                            lines = clean_result.get("lines", [])
+                            summary = clean_result.get("summary", {})
+
+                            df_reconciliation = pd.DataFrame(lines)
+                            numeric_cols = [
+                                "quantity",
+                                "invoice_unit_price",
+                                "contract_unit_price",
+                                "invoice_amount",
+                                "expected_amount",
+                                "extra_paid",
+                            ]
+                            for col in numeric_cols:
+                                if col in df_reconciliation.columns:
+                                    df_reconciliation[col] = pd.to_numeric(df_reconciliation[col], errors="coerce").fillna(0)
+
+                            st.dataframe(
+                                df_reconciliation.style.format({
+                                    "quantity": "{:,.2f}",
+                                    "invoice_unit_price": "{:,.4f}",
+                                    "contract_unit_price": "{:,.4f}",
+                                    "invoice_amount": "{:,.2f}",
+                                    "expected_amount": "{:,.2f}",
+                                    "extra_paid": "{:,.2f}",
+                                }),
+                                use_container_width=True,
+                                hide_index=True
+                            )
+
+                            st.subheader("📈 Summary Totals")
+                            col1, col2, col3, col4 = st.columns(4)
+
+                            with col1:
+                                st.metric("Invoice Amount", f"{float(summary.get('total_invoice_amount', 0)) :,.2f} $")
+                            with col2:
+                                st.metric("Expected Invoice Amount", f"{float(summary.get('total_expected_amount',0)) :,.2f} $")
+                            with col3:
+                                st.metric("Total Extra Paid", f"{float(summary.get('total_extra_paid', 0)) :,.2f} $")
+                            with col4:
+                                expected = float(summary.get('total_expected_amount', 0)) or 1
+                                extra = float(summary.get('total_extra_paid', 0))
+                                percentage = (extra / expected) * 100
+                                st.metric("Extra Paid (%)", f"{percentage:.2f} %")
+
+                            if 'difference' in df_reconciliation.columns:
+                                total_items = len(df_reconciliation)
+                                differences = df_reconciliation['difference'].str.lower().eq('yes').sum()
+                                matches = total_items - differences
+
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    st.metric("Total Items", total_items)
+                                with col2:
+                                    st.metric("✅ Matches", matches)
+                                with col3:
+                                    st.metric("⚠️ Differences", differences)
+
                         else:
-                            st.error("❌ Reconciliation failed: No valid output received")
-                    else:
-                        st.error("❌ Reconciliation failed: No output received from LLM")
+                            st.error(f"❌ Reconciliation failed: No valid output for invoice {invoice['filename']}")
 
-                except json.JSONDecodeError as e:
-                    st.error(f"❌ Error parsing JSON response: {str(e)}")
-                except Exception as e:
-                    st.error(f"❌ Error during reconciliation: {str(e)}")
+                    except json.JSONDecodeError as e:
+                        st.error(f"❌ Error parsing JSON response for invoice {invoice['filename']}: {str(e)}")
+                    except Exception as e:
+                        st.error(f"❌ Error during reconciliation for invoice {invoice['filename']}: {str(e)}")
 
-        # Display results
-        if 'reconciliation_result' in st.session_state :
-            clean_result = preprocess_reconciliation_result(st.session_state.reconciliation_result)
-            lines = clean_result.get("lines", [])
-            summary = clean_result.get("summary", {})
-
-            df_reconciliation = pd.DataFrame(lines)
-            numeric_cols = [
-                "quantity",
-                "invoice_unit_price",
-                "contract_unit_price",
-                "invoice_amount",
-                "expected_amount",
-                "extra_paid",
-            ]
-            for col in numeric_cols:
-               if col in df_reconciliation.columns:
-                 df_reconciliation[col] = pd.to_numeric(df_reconciliation[col], errors="coerce").fillna(0)
-                
-            st.subheader("📊 Reconciliation Results")
-            
-            st.dataframe(
-                df_reconciliation.style.format({
-                    "quantity": "{:,.2f}",
-                    "invoice_unit_price": "{:,.4f}",
-                    "contract_unit_price": "{:,.4f}",
-                    "invoice_amount": "{:,.2f}",
-                    "expected_amount": "{:,.2f}",
-                    "extra_paid": "{:,.2f}",
-                }),
-                use_container_width=True,
-                hide_index=True
-            )
-            summary_numeric = {}
-            for key in ["total_quantity", "total_invoice_amount", "total_expected_amount", "total_extra_paid"]:
-                summary_numeric[key] = float(summary.get(key, 0) or 0)
-
-            st.subheader("📈 Summary Totals")
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("Invoice Amount", f"{summary_numeric['total_invoice_amount']:,.2f} $")
-            with col2:
-                st.metric("Expected Invoice Amount", f"{summary_numeric['total_expected_amount']:,.2f} $")
-            with col3:
-                st.metric("Total Extra Paid", f"{summary_numeric['total_extra_paid']:,.2f} $")
-            # Optional: Add summary metrics
-
-            extra_percentage = (
-                  (summary_numeric["total_extra_paid"] / summary_numeric["total_expected_amount"]) * 100
-                   if summary_numeric["total_expected_amount"] > 0 else 0
-            )
-            with col4:
-                st.metric("Extra Paid (%)", f"{extra_percentage:.2f} %")
-            if 'difference' in df_reconciliation.columns:
-                total_items = len(df_reconciliation)
-                differences = df_reconciliation['difference'].str.lower().eq('yes').sum()
-                matches = total_items - differences
-                
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Total Items", total_items)
-                with col2:
-                    st.metric("✅ Matches", matches)
-                with col3:
-                    st.metric("⚠️ Differences", differences)
 
     # ==================== EXPORT TAB ====================
     with tab_export:
@@ -1113,4 +1127,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
