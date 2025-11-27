@@ -938,7 +938,6 @@ def main():
     with tab_reconcile:
         st.header("🔍 Reconciliation Analysis")
         client, deployment = get_azure_client()
-        search_text = st.text_input("Enter full or partial invoice filename to filter results")
 
         # Show button first
         if st.button("🔄 Reconcile All Invoices with Contracts", type="primary", use_container_width=True):
@@ -953,16 +952,6 @@ def main():
                 if not has_contract:
                     st.warning("📑 Contract data is missing. Please upload and process contracts first.")
             else:
-                if search_text:
-                    filtered_invoices = [
-                        inv for inv in st.session_state.invoices
-                        if search_text.lower() in inv['filename'].lower()
-                    ]
-                    if not filtered_invoices:
-                        st.info(f"No invoices found matching: {search_text}")
-                else:
-                    filtered_invoices = st.session_state.invoices
-
                 for invoice in st.session_state.invoices:
                     recon_contract = st.session_state.contracts
                     recon_invoice = [invoice]
@@ -1082,6 +1071,7 @@ def main():
                         st.error(f"❌ Error during reconciliation for invoice {invoice['filename']}: {str(e)}")
 
 
+
     # ==================== EXPORT TAB ====================
     with tab_export:
         st.header("📊 Export Data")
@@ -1127,3 +1117,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
