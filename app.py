@@ -1038,11 +1038,11 @@ def main():
                             col1, col2, col3, col4 = st.columns(4)
 
                             with col1:
-                                st.metric("Invoice Amount", f"{float(summary.get('total_invoice_amount', 0)) :,.2f} $")
+                                st.metric("Invoice Amount", f"${float(summary.get('total_invoice_amount', 0)) :,.2f} ")
                             with col2:
-                                st.metric("Expected Invoice Amount", f"{float(summary.get('total_expected_amount',0)) :,.2f} $")
+                                st.metric("Expected Invoice Amount", f"${float(summary.get('total_expected_amount',0)) :,.2f} ")
                             with col3:
-                                st.metric("Total Extra Paid", f"{float(summary.get('total_extra_paid', 0)) :,.2f} $")
+                                st.metric("Total Extra Paid", f"${float(summary.get('total_extra_paid', 0)) :,.2f} ")
                             with col4:
                                 expected = float(summary.get('total_expected_amount', 0)) or 1
                                 extra = float(summary.get('total_extra_paid', 0))
@@ -1117,4 +1117,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
