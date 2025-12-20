@@ -637,12 +637,12 @@ def matchinvoicetocontract(invoicelineitems, invoicelineitemcolumns, contracts, 
 # ==================== STREAMLIT UI ====================
 def main():
     st.set_page_config(
-        page_title="Contract Management System",
+        page_title="EvoXedge – AI Powered Cost Intelligence Engine,
         page_icon="📄",
         layout="wide"
     )
 
-    st.title("📄 Contract Management System")
+    st.title("Contracts Metadata Managemen)
     st.markdown("**Dynamic Rate Card Extraction: Automatically infers table structure from each contract**")
 
     # Initialize session state
@@ -780,7 +780,7 @@ def main():
     # ==================== INVOICES TAB (Under Development) ====================
     # ==================== INVOICES TAB ====================
     with tab_invoices:
-        st.header("📑 Invoice Processing")
+        st.header("Invoices Data Extraction")
 
         col1, col2 = st.columns([2, 1])
 
@@ -936,7 +936,7 @@ def main():
 
     # ==================== RECONCILE TAB (Under Development) ==================== 
     with tab_reconcile:
-        st.header("🔍 Reconciliation Analysis")
+        st.header("Data Reconciliation")
         client, deployment = get_azure_client()
 
         # Show button first
@@ -1074,7 +1074,7 @@ def main():
 
     # ==================== EXPORT TAB ====================
     with tab_export:
-        st.header("📊 Export Data")
+        st.header("Export Feature coming soon")
         st.warning("🚧 This feature is under development")
         st.info("Coming soon: Export all processed data in various formats")
 
@@ -1117,5 +1117,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
