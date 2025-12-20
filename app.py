@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 from datetime import date
 
-correct_password = st.secrets["password"]
+correct_password =st.secrets["password"] #"vectoriq@25"
 def check_password():
     # Initialize state once
     if "authenticated" not in st.session_state:
@@ -109,9 +109,9 @@ class Discrepancy:
 def get_azure_client():
     """Get configured Azure OpenAI client"""
     try:
-        api_key = st.secrets["AZURE_OPENAI_API_KEY"]
-        endpoint = st.secrets["AZURE_OPENAI_ENDPOINT"]
-        deployment = st.secrets["AZURE_OPENAI_DEPLOYMENT"]
+        api_key = st.secrets["AZURE_OPENAI_API_KEY"] #st.secrets["AZURE_OPENAI_API_KEY"] "2f6e41aa534f49908feb01c6de771d6b"
+        endpoint = st.secrets["AZURE_OPENAI_ENDPOINT"]  #st.secrets["AZURE_OPENAI_ENDPOINT"] "https://ea-oai-sandbox.openai.azure.com/"
+        deployment =st.secrets["AZURE_OPENAI_DEPLOYMENT"]#st.secrets["AZURE_OPENAI_DEPLOYMENT"] "dev-gpt-4o"
         
         if not api_key or not endpoint:
             st.error("⚠️ Azure OpenAI credentials not configured.")
@@ -318,8 +318,8 @@ def extract_text_ocr_azure(pdf_input, doc_intell_endpoint=None, doc_intell_key=N
     """
     
     # Azure Document Intelligence endpoint & key
-    endpoint =st.secrets["AZURE_DI_ENDPOINT"]
-    key = st.secrets["AZURE_DI_KEY"]
+    endpoint =st.secrets["AZURE_DI_ENDPOINT"]#"https://di-contractinv-qa-001.cognitiveservices.azure.com/"
+    key = st.secrets["AZURE_DI_KEY"] #"BvufO0Ysl0MvvxSfZRGJ2YTP8RLRN1jNDqzQQTQ59YSfuTIfKBDsJQQJ99BJAC1i4TkXJ3w3AAALACOGV4Fb"
     if not endpoint or not key:
         raise ValueError("Azure Document Intelligence credentials not found")
     
@@ -474,6 +474,51 @@ def extract_rate_card_dynamic(contract_text: str, client, deployment) -> tuple:
         st.error(f"Failed to parse rate card extraction: {e}")
         st.code(out, language='text')
         return [], [], []
+    
+
+def extract_contract_metadata(contract_text: str, client, deployment) -> dict:
+    system = """
+    You are a legal contract analysis assistant.
+    Extract ONLY the following contract metadata from the contract text.
+
+    Return a JSON object with EXACTLY these keys:
+    {
+      "contract_id": "",
+      "contract_title": "",
+      "contract_type": "",
+      "contract_status": "",
+      "execution_date": "",
+      "effective_date": "",
+      "vendor_legal_entity_name": "",
+      "initial_term_length": "",
+      "contract_end_date": "",
+      "auto_renewal": "",
+      "auto_renewal_period": "",
+      "notice_period_non_renewal_days": ""
+    }
+
+    Rules:
+    - Use empty string "" if information is not found
+    - Dates must be returned exactly as written in the contract
+    - Contract Type must be inferred (MSA, SOW, SaaS, NDA, License, etc.)
+    - Contract Status should be inferred logically if possible (Active, Expired, Terminated, Draft)
+    - Return ONLY valid JSON
+    """
+
+    user = f"""
+    Contract Text:
+    {contract_text}
+    """
+
+    out = azure_chat_json(client, deployment, system, user, max_tokens=1200)
+
+    try:
+        start = out.index("{")
+        end = out.rindex("}") + 1
+        return json.loads(out[start:end])
+    except Exception:
+        return {}
+
 
     
 def extract_invoice_dynamic(invoice_text: str, client, deployment) -> tuple:
@@ -566,6 +611,10 @@ def classify_invoice_line(description: str) -> Tuple[str, float]:
                 return cat, 0.9
     return "ONE_TIME", 0.5  # default fallback
 
+
+
+
+
 def calculate_expected_amount(quantity: float, rate_card: RateCard) -> float:
     """Calculate expected amount based on rate card tiers"""
     if not rate_card.tiers:
@@ -641,9 +690,29 @@ def main():
         page_icon="📄",
         layout="wide"
     )
+    
+ 
 
-    st.title("Contracts Metadata Managemen")
-    st.markdown("**Dynamic Rate Card Extraction: Automatically infers table structure from each contract**")
+
+
+
+
+
+
+
+
+
+    st.markdown(
+    """
+    <h1>
+        <span style='color:#d63637;'>EvoXedge</span>
+        <span style='color:#FFFFFF;'> – AI Powered Cost Intelligence Engine</span>
+    </h1>
+    """,
+    unsafe_allow_html=True,
+    )
+    st.markdown("Contracts Ingestion and Metadata Extraction Module")
+    
 
     # Initialize session state
     if 'contracts' not in st.session_state:
@@ -654,13 +723,13 @@ def main():
         st.session_state.invoices = []
 
     # Main tabs
-    tab_contracts, tab_invoices, tab_reconcile, tab_export = st.tabs(
-        ["📄 Contracts", "📑 Invoices ", "🔍 Reconcile (Under Dev)", "📊 Export (Under Dev)"]
+    tab_contracts, tab_invoices, tab_reconcile, tab_export, tab_gl = st.tabs(
+        ["Contracts", "Invoices ", "Data Reconciliation", "Export Feature coming soon","GL Data Extraction (Coming Soon)"]
     )
 
     # ==================== CONTRACTS TAB ====================
     with tab_contracts:
-        st.header("Contract Management")
+        st.header("Contract Metadata Management")
 
         col1, col2 = st.columns([2, 1])
 
@@ -698,6 +767,7 @@ def main():
                             st.stop()
 
                         # Extract rate cards dynamically
+                        metadata = extract_contract_metadata(contract_text, client, deployment)
                         rate_card_data, columns, extra_rates = extract_rate_card_dynamic(contract_text, client, deployment)
 
                         if rate_card_data and columns:
@@ -706,6 +776,7 @@ def main():
                                 'id': hashlib.md5(contract_text.encode()).hexdigest()[:8],
                                 'filename': uploaded_contract.name,
                                 'upload_date': datetime.now(),
+                                'metadata': metadata, 
                                 'rate_card_data': rate_card_data,
                                 'rate_card_columns': columns,
                                 'extra_rates': extra_rates,  # <-- added
@@ -738,8 +809,43 @@ def main():
                 ):
                     st.write(f"**Contract ID:** {contract['id']}")
                     st.write(f"**Upload Date:** {contract['upload_date'].strftime('%Y-%m-%d %H:%M:%S')}")
+                    #st.write(f"**Rate Card Items:** {len(contract['rate_card_data'])}")
+                    #st.write(f"**Columns:** {', '.join(contract['rate_card_columns'])}")
+                    meta = contract.get("metadata", {})
+
+                    
+                        
+
+                    if meta:
+                        st.write(f"**Contract Title:** {meta.get('contract_title', 'N/A')}")
+                        st.write(f"**Contract Type:** {meta.get('contract_type', 'N/A')}")
+                        st.write(f"**Execution Date:** {meta.get('execution_date', 'N/A')}")
+                        st.write(f"**Effective Date:** {meta.get('effective_date', 'N/A')}")
+                        st.write(f"**Initial Term:** {meta.get('initial_term_length', 'N/A')}")
+                        st.write(f"**Vendor Legal Entity:** {meta.get('vendor_legal_entity_name', 'N/A')}")
+                        st.write(f"**Auto-Renewal:** {meta.get('auto_renewal', 'N/A')}")
+                        st.write(
+                            f"**Notice Period (days):** "
+                            f"{meta.get('notice_period_non_renewal_days', 'N/A')}"
+                        )
+
                     st.write(f"**Rate Card Items:** {len(contract['rate_card_data'])}")
                     st.write(f"**Columns:** {', '.join(contract['rate_card_columns'])}")
+                    
+        # ================= END NEW ADDITION =================
+    
+
+
+
+
+
+
+
+
+
+
+
+
 
                     # Display rate cards with dynamic columns
                     if contract.get('rate_card_data') and contract.get('rate_card_columns'):
@@ -1071,7 +1177,6 @@ def main():
                         st.error(f"❌ Error during reconciliation for invoice {invoice['filename']}: {str(e)}")
 
 
-
     # ==================== EXPORT TAB ====================
     with tab_export:
         st.header("Export Feature coming soon")
@@ -1092,9 +1197,13 @@ def main():
                         df = df[contract['rate_card_columns']]
 
                     csv = df.to_csv(index=False).encode('utf-8')
-                    json_str = df.to_json(orient='records', indent=2).encode('utf-8')
+                    json_str = df.to_json(
+                        orient='records',
+                        indent=2
+                    ).encode('utf-8')
 
                     col1, col2 = st.columns(2)
+
                     with col1:
                         st.download_button(
                             label=f"📥 CSV - {contract['filename']}",
@@ -1103,6 +1212,7 @@ def main():
                             mime="text/csv",
                             key=unik(f"json_{contract['id']}")
                         )
+
                     with col2:
                         st.download_button(
                             label=f"📥 JSON - {contract['filename']}",
@@ -1114,10 +1224,22 @@ def main():
 
                     st.markdown("---")
 
+    # ==================== GL DATA EXTRACTION TAB ====================
+    with tab_gl:
+        st.header("GL Data Extraction")
+        st.warning("🚧 Coming Soon")
+        st.info(
+            "This module will support:\n"
+            "- Upload GL files (CSV / Excel)\n"
+            "- Mapping GL entries to Contracts and Invoices\n"
+            "- Cost center and account code analysis\n"
+            "- Spend leakage and variance detection\n\n"
+            "Stay tuned."
+        )
+
 
 if __name__ == "__main__":
     main()
-
 
 
 
