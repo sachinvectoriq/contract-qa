@@ -637,12 +637,12 @@ def matchinvoicetocontract(invoicelineitems, invoicelineitemcolumns, contracts, 
 # ==================== STREAMLIT UI ====================
 def main():
     st.set_page_config(
-        page_title="EvoXedge – AI Powered Cost Intelligence Engine,
+        page_title="EvoXedge – AI Powered Cost Intelligence Engine",
         page_icon="📄",
         layout="wide"
     )
 
-    st.title("Contracts Metadata Managemen)
+    st.title("Contracts Metadata Managemen")
     st.markdown("**Dynamic Rate Card Extraction: Automatically infers table structure from each contract**")
 
     # Initialize session state
@@ -1117,6 +1117,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
